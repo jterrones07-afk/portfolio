@@ -1,69 +1,38 @@
 [
   {
-    "name": "Retail and shopping promotions",
+    "name": "Job applications",
     "action": "move",
-    "destination": "Promotions",
+    "destination": "Jobs/Applications",
     "from_contains": [
-      "journeys.com",
-      "coach.com",
-      "gucci.com",
-      "shein.com",
-      "alltrails.com"
-    ],
-    "exclude_from_contains": [
-      "accounts.google.com",
-      "notification.capitalone.com",
-      "chase.com",
-      "gusto.com",
-      "github.com",
       "indeed.com",
-      "linkedin.com",
-      "ziprecruiter.com",
-      "adzuna.com",
-      "workablemail.com",
+      "workday.com",
       "send.applicantemails.com",
       "applyresponse.com",
-      "studentaid.gov"
-    ]
-  },
-  {
-    "name": "Vehicle alerts",
-    "action": "move",
-    "destination": "Vehicle Alerts",
-    "from_contains": [
-      "carfax.com",
-      "edmunds.com"
-    ]
-  },
-  {
-    "name": "Sports and entertainment newsletters",
-    "action": "move",
-    "destination": "Newsletters",
-    "from_contains": [
-      "espnmail.com",
-      "updates.ubisoft.com"
-    ]
-  },
-  {
-    "name": "Social notifications",
-    "action": "move",
-    "destination": "Social",
-    "from_contains": [
-      "tiktok.com"
-    ]
-  },
-  {
-    "name": "Restaurant promotions",
-    "action": "move",
-    "destination": "Promotions",
-    "from_contains": [
-      "benihana.com"
+      "idealtraits.com",
+      "workablemail.com"
+    ],
+    "subject_contains": [
+      "application",
+      "applied",
+      "thank you for applying",
+      "application received",
+      "application is complete",
+      "next steps",
+      "interview",
+      "assessment",
+      "application to"
+    ],
+    "exclude_subject_contains": [
+      "security",
+      "verification",
+      "password",
+      "account"
     ]
   },
   {
     "name": "Job alerts that are not applications",
     "action": "move",
-    "destination": "Job Alerts",
+    "destination": "Jobs/Alerts",
     "from_contains": [
       "linkedin.com",
       "ziprecruiter.com",
@@ -75,7 +44,8 @@
       "looking for a new job",
       "new positions",
       "positions to explore",
-      "tired of applying"
+      "tired of applying",
+      "job is a match"
     ],
     "exclude_subject_contains": [
       "application",
@@ -90,7 +60,58 @@
     ]
   },
   {
-    "name": "Newsletters and digests",
+    "name": "Vehicle alerts",
+    "action": "move",
+    "destination": "Vehicles",
+    "from_contains": [
+      "carfax.com",
+      "edmunds.com"
+    ]
+  },
+  {
+    "name": "Retail and shopping promotions",
+    "action": "move",
+    "destination": "Promotions/Shopping",
+    "from_contains": [
+      "journeys.com",
+      "coach.com",
+      "gucci.com",
+      "shein.com",
+      "alltrails.com"
+    ]
+  },
+  {
+    "name": "Restaurant promotions",
+    "action": "move",
+    "destination": "Promotions/Restaurants",
+    "from_contains": [
+      "benihana.com"
+    ]
+  },
+  {
+    "name": "Social notifications",
+    "action": "move",
+    "destination": "Social",
+    "from_contains": [
+      "tiktok.com"
+    ],
+    "exclude_subject_contains": [
+      "security",
+      "verification",
+      "password"
+    ]
+  },
+  {
+    "name": "Sports and entertainment newsletters",
+    "action": "move",
+    "destination": "Newsletters/Sports",
+    "from_contains": [
+      "espnmail.com",
+      "updates.ubisoft.com"
+    ]
+  },
+  {
+    "name": "General newsletters and digests",
     "action": "move",
     "destination": "Newsletters",
     "subject_contains": [
@@ -110,7 +131,51 @@
       "candidate",
       "employment",
       "security alert",
-      "verification"
+      "verification",
+      "payment due",
+      "account"
+    ]
+  },
+  {
+    "name": "Travel confirmations",
+    "action": "move",
+    "destination": "Travel",
+    "from_contains": [
+      "flyfrontier.com"
+    ],
+    "subject_contains": [
+      "booking confirmation",
+      "reservation",
+      "itinerary",
+      "flight"
+    ],
+    "exclude_subject_contains": [
+      "security",
+      "verification",
+      "password"
+    ]
+  },
+  {
+    "name": "Purchase confirmations",
+    "action": "move",
+    "destination": "Purchases",
+    "from_contains": [
+      "amazon.com",
+      "loox.io"
+    ],
+    "subject_contains": [
+      "ordered",
+      "order",
+      "receipt",
+      "invoice",
+      "payment",
+      "how did it go"
+    ],
+    "exclude_subject_contains": [
+      "security",
+      "verification",
+      "password",
+      "account"
     ]
   }
 ]

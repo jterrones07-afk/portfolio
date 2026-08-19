@@ -1,6 +1,67 @@
 [
   {
-    "name": "Newsletters",
+    "name": "Retail and shopping promotions",
+    "action": "move",
+    "destination": "Promotions",
+    "from_contains": [
+      "journeys.com",
+      "coach.com",
+      "gucci.com",
+      "shein.com",
+      "carfax.com",
+      "alltrails.com",
+      "benihana.com",
+      "edmunds.com",
+      "espnmail.com",
+      "tiktok.com"
+    ],
+    "exclude_from_contains": [
+      "accounts.google.com",
+      "notification.capitalone.com",
+      "chase.com",
+      "gusto.com",
+      "github.com",
+      "indeed.com",
+      "linkedin.com",
+      "ziprecruiter.com",
+      "adzuna.com",
+      "workablemail.com",
+      "send.applicantemails.com",
+      "applyresponse.com",
+      "studentaid.gov"
+    ]
+  },
+  {
+    "name": "Job alerts that are not applications",
+    "action": "move",
+    "destination": "Job Alerts",
+    "from_contains": [
+      "linkedin.com",
+      "ziprecruiter.com",
+      "adzuna.com"
+    ],
+    "subject_contains": [
+      "job alert",
+      "jobs",
+      "looking for a new job",
+      "new positions",
+      "positions to explore",
+      "tired of applying"
+    ],
+    "exclude_subject_contains": [
+      "application",
+      "applied",
+      "application received",
+      "application is complete",
+      "thank you for applying",
+      "next steps",
+      "interview",
+      "assessment",
+      "message from"
+    ]
+  },
+  {
+    "name": "Newsletters and digests",
     "action": "move",
     "destination": "Newsletters",
     "subject_contains": [
@@ -9,82 +70,7 @@
       "daily digest",
       "weekly roundup",
       "monthly roundup",
-      "unsubscribe"
-    ],
-    "exclude_subject_contains": [
-      "application",
-      "interview",
-      "job",
-      "hiring",
-      "recruiter",
-      "candidate",
-      "employment"
-    ],
-    "exclude_body_contains": [
-      "job application",
-      "interview",
-      "recruiter",
-      "hiring manager"
-    ]
-  },
-  {
-    "name": "Receipts and invoices",
-    "action": "move",
-    "destination": "Receipts",
-    "from_contains": [
-      "receipt",
-      "billing",
-      "invoice",
-      "orders"
-    ],
-    "subject_contains": [
-      "receipt",
-      "invoice",
-      "order confirmation",
-      "payment confirmation",
-      "purchase"
-    ],
-    "exclude_subject_contains": [
-      "application",
-      "interview",
-      "job offer"
-    ]
-  },
-  {
-    "name": "Shipping notifications",
-    "action": "move",
-    "destination": "Shipping",
-    "subject_contains": [
-      "your order shipped",
-      "shipped",
-      "out for delivery",
-      "delivered",
-      "tracking",
-      "delivery"
-    ],
-    "exclude_subject_contains": [
-      "application",
-      "interview",
-      "job",
-      "hiring",
-      "recruiter"
-    ]
-  },
-  {
-    "name": "Promotions",
-    "action": "move",
-    "destination": "Promotions",
-    "subject_contains": [
-      "sale",
-      "deal",
-      "discount",
-      "offer",
-      "promo",
-      "clearance",
-      "save",
-      "coupon",
-      "limited time",
-      "flash sale"
+      "weekly stats"
     ],
     "exclude_subject_contains": [
       "application",
@@ -94,19 +80,8 @@
       "recruiter",
       "candidate",
       "employment",
-      "career",
-      "resume",
-      "position",
-      "sales representative",
-      "technician"
-    ],
-    "exclude_body_contains": [
-      "job application",
-      "application status",
-      "interview",
-      "recruiter",
-      "hiring manager",
-      "employment opportunity"
+      "security alert",
+      "verification"
     ]
   }
 ]

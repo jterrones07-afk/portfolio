@@ -10,6 +10,21 @@
       "weekly roundup",
       "monthly roundup",
       "unsubscribe"
+    ],
+    "exclude_subject_contains": [
+      "application",
+      "interview",
+      "job",
+      "hiring",
+      "recruiter",
+      "candidate",
+      "employment"
+    ],
+    "exclude_body_contains": [
+      "job application",
+      "interview",
+      "recruiter",
+      "hiring manager"
     ]
   },
   {
@@ -20,8 +35,7 @@
       "receipt",
       "billing",
       "invoice",
-      "orders",
-      "no-reply"
+      "orders"
     ],
     "subject_contains": [
       "receipt",
@@ -29,6 +43,11 @@
       "order confirmation",
       "payment confirmation",
       "purchase"
+    ],
+    "exclude_subject_contains": [
+      "application",
+      "interview",
+      "job offer"
     ]
   },
   {
@@ -42,6 +61,13 @@
       "delivered",
       "tracking",
       "delivery"
+    ],
+    "exclude_subject_contains": [
+      "application",
+      "interview",
+      "job",
+      "hiring",
+      "recruiter"
     ]
   },
   {
@@ -59,6 +85,28 @@
       "coupon",
       "limited time",
       "flash sale"
+    ],
+    "exclude_subject_contains": [
+      "application",
+      "interview",
+      "job",
+      "hiring",
+      "recruiter",
+      "candidate",
+      "employment",
+      "career",
+      "resume",
+      "position",
+      "sales representative",
+      "technician"
+    ],
+    "exclude_body_contains": [
+      "job application",
+      "application status",
+      "interview",
+      "recruiter",
+      "hiring manager",
+      "employment opportunity"
     ]
   }
 ]

@@ -136,12 +136,42 @@ def ensure_destination(mailbox: imaplib.IMAP4_SSL, rule: Rule, dry_run: bool) ->
     return destination
 
 def copy_and_delete(mailbox: imaplib.IMAP4_SSL, message_id: bytes, destination: str) -> None:
-    status, _ = mailbox.copy(message_id, destination)
+    """Move a message safely, preferring Gmail labels over IMAP COPY.
+
+    Gmail exposes labels through the X-GM-LABELS extension. Applying the
+    destination label first and removing INBOX second avoids Gmail COPY
+    failures while preserving the invariant that the original is never
+    removed unless the destination operation succeeded.
+    """
+    if mailbox.capability("X-GM-EXT-1")[0] == "OK":
+        add_status, add_data = mailbox.store(
+            message_id, "+X-GM-LABELS", f'("{destination}")'
+        )
+        if add_status == "OK":
+            remove_status, remove_data = mailbox.store(
+                message_id, "-X-GM-LABELS", r'("\\Inbox")'
+            )
+            if remove_status == "OK":
+                return
+            detail = remove_data[-1].decode(errors="replace") if remove_data and isinstance(remove_data[-1], bytes) else str(remove_data)
+            raise RuntimeError(
+                f"Gmail label move succeeded for {message_id.decode()}, but removing INBOX failed: {detail}"
+            )
+        detail = add_data[-1].decode(errors="replace") if add_data and isinstance(add_data[-1], bytes) else str(add_data)
+        raise RuntimeError(
+            f"Gmail label add failed for {message_id.decode()} to '{destination}': {detail}; original was not removed."
+        )
+
+    status, data = mailbox.copy(message_id, destination)
     if status != "OK":
-        raise RuntimeError(f"COPY failed for {message_id.decode()}; original was not deleted.")
-    status, _ = mailbox.store(message_id, "+FLAGS", r"\Deleted")
+        detail = data[-1].decode(errors="replace") if data and isinstance(data[-1], bytes) else str(data)
+        raise RuntimeError(
+            f"COPY failed for {message_id.decode()} to '{destination}': {detail}; original was not deleted."
+        )
+    status, data = mailbox.store(message_id, "+FLAGS", r"\\Deleted")
     if status != "OK":
-        raise RuntimeError(f"STORE failed after copying {message_id.decode()} to '{destination}'.")
+        detail = data[-1].decode(errors="replace") if data and isinstance(data[-1], bytes) else str(data)
+        raise RuntimeError(f"STORE failed after copying {message_id.decode()} to '{destination}': {detail}")
 
 def apply_action(mailbox: imaplib.IMAP4_SSL, message_id: bytes, rule: Rule, dry_run: bool, destinations: dict[str, str]) -> None:
     if dry_run:
@@ -149,11 +179,11 @@ def apply_action(mailbox: imaplib.IMAP4_SSL, message_id: bytes, rule: Rule, dry_
     if rule.action == "archive":
         copy_and_delete(mailbox, message_id, os.getenv("IMAP_ARCHIVE_MAILBOX", "Archive"))
     elif rule.action == "delete":
-        status, _ = mailbox.store(message_id, "+FLAGS", r"\Deleted")
+        status, _ = mailbox.store(message_id, "+FLAGS", r"\\Deleted")
         if status != "OK":
             raise RuntimeError(f"DELETE failed for {message_id.decode()}.")
     elif rule.action == "mark_read":
-        status, _ = mailbox.store(message_id, "+FLAGS", r"\Seen")
+        status, _ = mailbox.store(message_id, "+FLAGS", r"\\Seen")
         if status != "OK":
             raise RuntimeError(f"MARK_READ failed for {message_id.decode()}.")
     elif rule.action == "move":
@@ -177,7 +207,6 @@ def fetch_headers_batch(mailbox: imaplib.IMAP4_SSL, message_ids: list[bytes]) ->
             match = pattern.match(prefix)
             if match:
                 result[match.group(1)] = email.message_from_bytes(raw_header)
-    # Fallback for servers that return an unexpected FETCH response shape.
     for message_id in message_ids:
         if message_id in result:
             continue

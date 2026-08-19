@@ -1,0 +1,19 @@
+[
+  {
+    "name": "Archive newsletters",
+    "action": "archive",
+    "subject_contains": ["newsletter", "weekly digest", "roundup"]
+  },
+  {
+    "name": "Move receipts",
+    "action": "move",
+    "destination": "Receipts",
+    "from_contains": ["receipt", "billing", "invoice"],
+    "subject_contains": ["receipt", "invoice", "payment"]
+  },
+  {
+    "name": "Delete obvious promotions",
+    "action": "delete",
+    "subject_contains": ["limited time", "flash sale", "exclusive offer"]
+  }
+]

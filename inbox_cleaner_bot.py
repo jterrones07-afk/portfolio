@@ -111,26 +111,46 @@ def ensure_destination(rule: Rule) -> str:
     return rule.destination or ""
 
 
+def copy_and_delete(mailbox: imaplib.IMAP4_SSL, message_id: bytes, destination: str) -> None:
+    status, _ = mailbox.copy(message_id, destination)
+    if status != "OK":
+        raise RuntimeError(
+            f"IMAP COPY failed for message {message_id.decode()} to mailbox '{destination}'; "
+            "original message was not deleted."
+        )
+    status, _ = mailbox.store(message_id, "+FLAGS", "\\Deleted")
+    if status != "OK":
+        raise RuntimeError(
+            f"IMAP STORE failed while marking message {message_id.decode()} as deleted "
+            f"after a successful copy to '{destination}'."
+        )
+
+
 def apply_action(mailbox: imaplib.IMAP4_SSL, message_id: bytes, rule: Rule, dry_run: bool) -> None:
     destination = ensure_destination(rule)
     if dry_run:
         return
     if rule.action == "archive":
         archive_mailbox = os.getenv("IMAP_ARCHIVE_MAILBOX", "Archive")
-        mailbox.copy(message_id, archive_mailbox)
-        mailbox.store(message_id, "+FLAGS", "\\Deleted")
+        copy_and_delete(mailbox, message_id, archive_mailbox)
     elif rule.action == "delete":
-        mailbox.store(message_id, "+FLAGS", "\\Deleted")
+        status, _ = mailbox.store(message_id, "+FLAGS", "\\Deleted")
+        if status != "OK":
+            raise RuntimeError(f"IMAP STORE failed while deleting message {message_id.decode()}.")
     elif rule.action == "mark_read":
-        mailbox.store(message_id, "+FLAGS", "\\Seen")
+        status, _ = mailbox.store(message_id, "+FLAGS", "\\Seen")
+        if status != "OK":
+            raise RuntimeError(f"IMAP STORE failed while marking message {message_id.decode()} as read.")
     elif rule.action == "move":
-        mailbox.copy(message_id, destination)
-        mailbox.store(message_id, "+FLAGS", "\\Deleted")
+        copy_and_delete(mailbox, message_id, destination)
     else:
         raise ValueError(f"Unsupported action: {rule.action}")
 
 
 def clean_inbox(rules: list[Rule], limit: int, dry_run: bool) -> int:
+    if limit < 1:
+        raise ValueError("--limit must be a positive integer.")
+
     processed = 0
     with connect() as mailbox:
         mailbox.select("INBOX")

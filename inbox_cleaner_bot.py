@@ -12,6 +12,7 @@ import re
 from dataclasses import dataclass
 from email.header import decode_header, make_header
 from email.message import Message
+from email.utils import parseaddr
 from typing import Iterable, Literal
 
 Action = Literal["archive", "delete", "move", "mark_read"]
@@ -83,8 +84,14 @@ def contains_any(haystack: str, needles: list[str] | None) -> bool:
     return any(needle.lower() in normalized for needle in needles)
 
 
+def sender_text(message: Message) -> str:
+    raw_sender = message.get("from", "")
+    display_name, address = parseaddr(raw_sender)
+    return f"{raw_sender} {display_name} {address}".lower()
+
+
 def rule_matches(rule: Rule, message: Message, body: str | None = None) -> bool:
-    sender = message.get("from", "")
+    sender = sender_text(message)
     subject = str(make_header(decode_header(message.get("subject", ""))))
     if not contains_any(sender, rule.from_contains):
         return False
@@ -159,7 +166,7 @@ def fetch_header(mailbox: imaplib.IMAP4_SSL, message_id: bytes) -> Message | Non
 
 
 def fetch_body(mailbox: imaplib.IMAP4_SSL, message_id: bytes) -> Message | None:
-    status, data = mailbox.fetch(message_id, "(BODY.PEEK[])" )
+    status, data = mailbox.fetch(message_id, "(BODY.PEEK[])")
     if status != "OK" or not data or not isinstance(data[0], tuple):
         return None
     return email.message_from_bytes(data[0][1])
@@ -175,16 +182,20 @@ def evaluate_message(mailbox: imaplib.IMAP4_SSL, message_id: bytes, rules: list[
         print(f"{message_id.decode()}: skipped because IMAP HEADER FETCH failed")
         return None, None
 
+    full_message: Message | None = None
+    body: str | None = None
     for rule in rules:
-        if not rule_needs_body(rule) and rule_matches(rule, header):
-            return header, rule
         if rule_needs_body(rule):
-            full_message = fetch_body(mailbox, message_id)
             if full_message is None:
-                print(f"{message_id.decode()}: skipped because IMAP BODY FETCH failed")
-                return header, None
-            if rule_matches(rule, full_message, message_text(full_message)):
+                full_message = fetch_body(mailbox, message_id)
+                if full_message is None:
+                    print(f"{message_id.decode()}: skipped because IMAP BODY FETCH failed")
+                    return header, None
+                body = message_text(full_message)
+            if rule_matches(rule, full_message, body):
                 return full_message, rule
+        elif rule_matches(rule, header):
+            return header, rule
     return header, None
 
 

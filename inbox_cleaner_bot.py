@@ -29,6 +29,9 @@ class Rule:
     from_contains: list[str] | None = None
     subject_contains: list[str] | None = None
     body_contains: list[str] | None = None
+    exclude_from_contains: list[str] | None = None
+    exclude_subject_contains: list[str] | None = None
+    exclude_body_contains: list[str] | None = None
 
     @classmethod
     def from_dict(cls, data: dict[str, object]) -> "Rule":
@@ -39,6 +42,9 @@ class Rule:
             from_contains=_string_list(data.get("from_contains")),
             subject_contains=_string_list(data.get("subject_contains")),
             body_contains=_string_list(data.get("body_contains")),
+            exclude_from_contains=_string_list(data.get("exclude_from_contains")),
+            exclude_subject_contains=_string_list(data.get("exclude_subject_contains")),
+            exclude_body_contains=_string_list(data.get("exclude_body_contains")),
         )
 
 
@@ -93,6 +99,9 @@ def rule_matches(rule: Rule, message: Message) -> bool:
         contains_any(sender, rule.from_contains)
         and contains_any(subject, rule.subject_contains)
         and contains_any(body, rule.body_contains)
+        and not contains_any(sender, rule.exclude_from_contains)
+        and not contains_any(subject, rule.exclude_subject_contains)
+        and not contains_any(body, rule.exclude_body_contains)
     )
 
 
@@ -153,11 +162,18 @@ def clean_inbox(rules: list[Rule], limit: int, dry_run: bool) -> int:
 
     processed = 0
     with connect() as mailbox:
-        mailbox.select("INBOX")
-        _, data = mailbox.search(None, "ALL")
+        status, _ = mailbox.select("INBOX")
+        if status != "OK":
+            raise RuntimeError("Unable to select INBOX.")
+        status, data = mailbox.search(None, "ALL")
+        if status != "OK":
+            raise RuntimeError("Unable to search INBOX.")
         message_ids = data[0].split()[-limit:]
         for message_id in message_ids:
-            _, message_data = mailbox.fetch(message_id, "(RFC822)")
+            status, message_data = mailbox.fetch(message_id, "(RFC822)")
+            if status != "OK" or not message_data or not isinstance(message_data[0], tuple):
+                print(f"{message_id.decode()}: skipped because IMAP FETCH failed")
+                continue
             raw_message = message_data[0][1]
             message = email.message_from_bytes(raw_message)
             for rule in rules:

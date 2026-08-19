@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Rule-based IMAP inbox cleaner with safe dry-run and analysis modes."""
+"""Fast, rule-based IMAP inbox organizer with safe dry-run by default."""
 
 from __future__ import annotations
 
@@ -9,6 +9,7 @@ import imaplib
 import json
 import os
 import re
+import time
 from dataclasses import dataclass
 from email.header import decode_header, make_header
 from email.message import Message
@@ -32,9 +33,12 @@ class Rule:
 
     @classmethod
     def from_dict(cls, data: dict[str, object]) -> "Rule":
+        action = str(data["action"])
+        if action not in {"archive", "delete", "move", "mark_read"}:
+            raise ValueError(f"Unsupported action: {action}")
         return cls(
             name=str(data["name"]),
-            action=str(data["action"]),  # type: ignore[arg-type]
+            action=action,  # type: ignore[arg-type]
             destination=data.get("destination") and str(data["destination"]),
             from_contains=_string_list(data.get("from_contains")),
             subject_contains=_string_list(data.get("subject_contains")),
@@ -78,7 +82,6 @@ def message_text(message: Message) -> str:
 
 
 def contains_any(haystack: str, needles: list[str] | None) -> bool:
-    """Return True when any configured substring occurs, case-insensitively."""
     if not needles:
         return True
     normalized = haystack.casefold()
@@ -92,9 +95,6 @@ def decoded_subject(message: Message) -> str:
 def sender_text(message: Message) -> str:
     raw_sender = message.get("from", "")
     display_name, address = parseaddr(raw_sender)
-    # Match against both the raw header and parsed address/name. Gmail commonly
-    # supplies quoted display names and encoded headers, so relying on one form
-    # can make otherwise valid domain rules fail.
     return " ".join((raw_sender, display_name, address)).casefold()
 
 
@@ -121,51 +121,56 @@ def rule_matches(rule: Rule, message: Message, body: str | None = None) -> bool:
     return True
 
 
-def explain_rule(rule: Rule, message: Message) -> str:
-    """Return a short reason for why a header does or does not match a rule."""
-    sender = sender_text(message)
-    subject = decoded_subject(message)
-    reasons: list[str] = []
-    if rule.from_contains:
-        reasons.append(f"from={'yes' if contains_any(sender, rule.from_contains) else 'no'}")
-    if rule.subject_contains:
-        reasons.append(f"subject={'yes' if contains_any(subject, rule.subject_contains) else 'no'}")
-    if rule.exclude_from_contains and contains_any(sender, rule.exclude_from_contains):
-        reasons.append("excluded-sender=yes")
-    if rule.exclude_subject_contains and contains_any(subject, rule.exclude_subject_contains):
-        reasons.append("excluded-subject=yes")
-    return ", ".join(reasons) or "no positive match fields"
-
-
 def connect() -> imaplib.IMAP4_SSL:
-    mailbox = imaplib.IMAP4_SSL(os.environ["IMAP_HOST"], timeout=30)
-    mailbox.login(os.environ["IMAP_USERNAME"], os.environ["IMAP_PASSWORD"])
+    host = os.environ.get("IMAP_HOST")
+    username = os.environ.get("IMAP_USERNAME")
+    password = os.environ.get("IMAP_PASSWORD")
+    if not host or not username or not password:
+        raise RuntimeError("Set IMAP_HOST, IMAP_USERNAME, and IMAP_PASSWORD before running.")
+    mailbox = imaplib.IMAP4_SSL(host, timeout=60)
+    mailbox.login(username, password)
     return mailbox
 
 
-def ensure_destination(rule: Rule) -> str:
+def ensure_destination(mailbox: imaplib.IMAP4_SSL, rule: Rule, dry_run: bool) -> str:
     if rule.action == "move" and not rule.destination:
         raise ValueError(f"Rule '{rule.name}' uses action 'move' but has no destination.")
-    return rule.destination or ""
+    destination = rule.destination or ""
+    if rule.action != "move" or dry_run:
+        return destination
+
+    status, mailboxes = mailbox.list(pattern=f'"{destination}"')
+    if status == "OK" and mailboxes:
+        return destination
+
+    status, _ = mailbox.create(destination)
+    if status != "OK":
+        raise RuntimeError(
+            f"Destination mailbox/label '{destination}' does not exist and could not be created."
+        )
+    return destination
 
 
 def copy_and_delete(mailbox: imaplib.IMAP4_SSL, message_id: bytes, destination: str) -> None:
     status, _ = mailbox.copy(message_id, destination)
     if status != "OK":
         raise RuntimeError(
-            f"IMAP COPY failed for message {message_id.decode()} to mailbox '{destination}'; "
-            "original message was not deleted."
+            f"IMAP COPY failed for message {message_id.decode()}; original was not deleted."
         )
     status, _ = mailbox.store(message_id, "+FLAGS", "\\Deleted")
     if status != "OK":
         raise RuntimeError(
-            f"IMAP STORE failed while marking message {message_id.decode()} as deleted "
-            f"after a successful copy to '{destination}'."
+            f"IMAP STORE failed after copying message {message_id.decode()} to '{destination}'."
         )
 
 
-def apply_action(mailbox: imaplib.IMAP4_SSL, message_id: bytes, rule: Rule, dry_run: bool) -> None:
-    destination = ensure_destination(rule)
+def apply_action(
+    mailbox: imaplib.IMAP4_SSL,
+    message_id: bytes,
+    rule: Rule,
+    dry_run: bool,
+    destinations: dict[str, str],
+) -> None:
     if dry_run:
         return
     if rule.action == "archive":
@@ -173,22 +178,35 @@ def apply_action(mailbox: imaplib.IMAP4_SSL, message_id: bytes, rule: Rule, dry_
     elif rule.action == "delete":
         status, _ = mailbox.store(message_id, "+FLAGS", "\\Deleted")
         if status != "OK":
-            raise RuntimeError(f"IMAP STORE failed while deleting message {message_id.decode()}.")
+            raise RuntimeError(f"IMAP STORE failed while deleting {message_id.decode()}.")
     elif rule.action == "mark_read":
         status, _ = mailbox.store(message_id, "+FLAGS", "\\Seen")
         if status != "OK":
-            raise RuntimeError(f"IMAP STORE failed while marking message {message_id.decode()} as read.")
+            raise RuntimeError(f"IMAP STORE failed while marking {message_id.decode()} read.")
     elif rule.action == "move":
-        copy_and_delete(mailbox, message_id, destination)
+        copy_and_delete(mailbox, message_id, destinations[rule.name])
     else:
         raise ValueError(f"Unsupported action: {rule.action}")
 
 
-def fetch_header(mailbox: imaplib.IMAP4_SSL, message_id: bytes) -> Message | None:
-    status, data = mailbox.fetch(message_id, "(BODY.PEEK[HEADER])")
-    if status != "OK" or not data or not isinstance(data[0], tuple):
-        return None
-    return email.message_from_bytes(data[0][1])
+def fetch_headers_batch(
+    mailbox: imaplib.IMAP4_SSL, message_ids: list[bytes]
+) -> dict[bytes, Message]:
+    if not message_ids:
+        return {}
+    message_set = ",".join(item.decode() for item in message_ids)
+    status, data = mailbox.fetch(message_set, "(BODY.PEEK[HEADER])")
+    if status != "OK":
+        raise RuntimeError("IMAP batch header fetch failed.")
+
+    result: dict[bytes, Message] = {}
+    for item in data:
+        if not isinstance(item, tuple):
+            continue
+        match = re.match(rb"(\d+) \(BODY\.PEEK\[HEADER\]", item[0])
+        if match:
+            result[match.group(1)] = email.message_from_bytes(item[1])
+    return result
 
 
 def fetch_body(mailbox: imaplib.IMAP4_SSL, message_id: bytes) -> Message | None:
@@ -202,92 +220,231 @@ def rule_needs_body(rule: Rule) -> bool:
     return bool(rule.body_contains or rule.exclude_body_contains)
 
 
-def evaluate_message(mailbox: imaplib.IMAP4_SSL, message_id: bytes, rules: list[Rule]) -> tuple[Message | None, Rule | None]:
-    header = fetch_header(mailbox, message_id)
-    if header is None:
-        print(f"{message_id.decode()}: skipped because IMAP HEADER FETCH failed")
-        return None, None
+def evaluate_message(
+    mailbox: imaplib.IMAP4_SSL,
+    message_id: bytes,
+    header: Message,
+    rules: list[Rule],
+) -> Rule | None:
+    body_rules = [rule for rule in rules if rule_needs_body(rule)]
 
-    full_message: Message | None = None
-    body: str | None = None
+    # Fast path: most rules only need sender/subject headers.
     for rule in rules:
-        if rule_needs_body(rule):
-            if full_message is None:
-                full_message = fetch_body(mailbox, message_id)
-                if full_message is None:
-                    print(f"{message_id.decode()}: skipped because IMAP BODY FETCH failed")
-                    return header, None
-                body = message_text(full_message)
+        if not rule_needs_body(rule) and rule_matches(rule, header):
+            return rule
+
+    # Only download a full email when a rule explicitly needs its body.
+    if body_rules:
+        full_message = fetch_body(mailbox, message_id)
+        if full_message is None:
+            print(f"{message_id.decode()}: skipped because IMAP BODY FETCH failed")
+            return None
+        body = message_text(full_message)
+        for rule in body_rules:
             if rule_matches(rule, full_message, body):
-                return full_message, rule
-        elif rule_matches(rule, header):
-            return header, rule
-    return header, None
+                return rule
+    return None
 
 
-def clean_inbox(rules: list[Rule], limit: int, dry_run: bool) -> int:
-    if limit < 1:
+def get_message_ids(
+    mailbox: imaplib.IMAP4_SSL,
+    limit: int | None,
+    since_days: int | None,
+) -> list[bytes]:
+    if since_days is not None:
+        if since_days < 0:
+            raise ValueError("--since-days cannot be negative.")
+        since_date = time.strftime(
+            "%d-%b-%Y", time.localtime(time.time() - since_days * 86400)
+        )
+        status, data = mailbox.search(None, "SINCE", since_date)
+    else:
+        status, data = mailbox.search(None, "ALL")
+    if status != "OK":
+        raise RuntimeError("Unable to search INBOX.")
+
+    message_ids = data[0].split()
+    if limit is not None:
+        message_ids = message_ids[-limit:]
+    return message_ids
+
+
+def clean_inbox(
+    rules: list[Rule],
+    limit: int | None,
+    dry_run: bool,
+    batch_size: int,
+    since_days: int | None,
+    progress_every: int,
+    continue_on_error: bool,
+) -> int:
+    if limit is not None and limit < 1:
         raise ValueError("--limit must be a positive integer.")
+    if batch_size < 1:
+        raise ValueError("--batch-size must be positive.")
+
     processed = 0
+    matched = 0
+    errors = 0
+    started = time.time()
+
     with connect() as mailbox:
         status, _ = mailbox.select("INBOX")
         if status != "OK":
             raise RuntimeError("Unable to select INBOX.")
-        status, data = mailbox.search(None, "ALL")
-        if status != "OK":
-            raise RuntimeError("Unable to search INBOX.")
-        message_ids = data[0].split()[-limit:]
-        for message_id in message_ids:
-            message, rule = evaluate_message(mailbox, message_id, rules)
-            if rule and message:
-                subject = re.sub(r"\s+", " ", decoded_subject(message) or "(no subject)").strip()
-                print(f"{message_id.decode()}: {rule.action.upper()} via '{rule.name}' — {subject}")
-                apply_action(mailbox, message_id, rule, dry_run)
-                processed += 1
+
+        message_ids = get_message_ids(mailbox, limit, since_days)
+        print(f"Scanning {len(message_ids):,} message(s) in batches of {batch_size}...")
+
+        destinations: dict[str, str] = {}
         if not dry_run:
+            for rule in rules:
+                if rule.action == "move":
+                    destinations[rule.name] = ensure_destination(mailbox, rule, dry_run=False)
+
+        for start in range(0, len(message_ids), batch_size):
+            batch = message_ids[start : start + batch_size]
+            headers = fetch_headers_batch(mailbox, batch)
+
+            for message_id in batch:
+                processed += 1
+                header = headers.get(message_id)
+                if header is None:
+                    print(f"{message_id.decode()}: skipped because header was not returned")
+                    errors += 1
+                    continue
+
+                rule = evaluate_message(mailbox, message_id, header, rules)
+                if rule is None:
+                    continue
+
+                subject = re.sub(r"\s+", " ", decoded_subject(header) or "(no subject)").strip()
+                print(
+                    f"{message_id.decode()}: {rule.action.upper()} via "
+                    f"'{rule.name}' — {subject}"
+                )
+                matched += 1
+                try:
+                    apply_action(mailbox, message_id, rule, dry_run, destinations)
+                except Exception as exc:
+                    errors += 1
+                    print(f"  ERROR: {exc}")
+                    if not continue_on_error:
+                        raise
+
+            if processed % progress_every == 0 or processed == len(message_ids):
+                elapsed = max(time.time() - started, 0.001)
+                rate = processed / elapsed
+                print(
+                    f"Progress: {processed:,}/{len(message_ids):,} "
+                    f"({rate:.1f} msg/s), matched {matched:,}, errors {errors:,}"
+                )
+
+        if not dry_run and matched:
             mailbox.expunge()
-    return processed
+
+    print(
+        f"Finished: scanned {processed:,}, matched {matched:,}, "
+        f"errors {errors:,}."
+    )
+    return matched
 
 
-def analyze_inbox(limit: int) -> None:
-    if limit < 1:
+def analyze_inbox(limit: int | None, batch_size: int) -> None:
+    if limit is not None and limit < 1:
         raise ValueError("--limit must be a positive integer.")
     with connect() as mailbox:
         status, _ = mailbox.select("INBOX", readonly=True)
         if status != "OK":
             raise RuntimeError("Unable to select INBOX.")
-        status, data = mailbox.search(None, "ALL")
-        if status != "OK":
-            raise RuntimeError("Unable to search INBOX.")
-        message_ids = data[0].split()[-limit:]
-        print(f"Analyzing {len(message_ids)} message(s)...")
-        for message_id in message_ids:
-            message = fetch_header(mailbox, message_id)
-            if message is None:
-                continue
-            sender = message.get("from", "(unknown sender)")
-            subject = decoded_subject(message) or "(no subject)"
-            print(f"{message_id.decode()} | {sender} | {subject}")
+        message_ids = get_message_ids(mailbox, limit, None)
+        print(f"Analyzing {len(message_ids):,} message(s)...")
+        for start in range(0, len(message_ids), batch_size):
+            batch = message_ids[start : start + batch_size]
+            headers = fetch_headers_batch(mailbox, batch)
+            for message_id in batch:
+                message = headers.get(message_id)
+                if message is None:
+                    continue
+                sender = message.get("from", "(unknown sender)")
+                subject = decoded_subject(message) or "(no subject)"
+                print(f"{message_id.decode()} | {sender} | {subject}")
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Clean or analyze an IMAP inbox using JSON rules.")
-    parser.add_argument("--rules", default="inbox_rules.example.json", help="Path to JSON rules file.")
-    parser.add_argument("--limit", type=int, default=50, help="Maximum recent messages to scan.")
-    parser.add_argument("--apply", action="store_true", help="Apply changes instead of running a dry run.")
-    parser.add_argument("--analyze", action="store_true", help="List recent sender/subject headers without applying rules.")
-    return parser.parse_args()
+    parser = argparse.ArgumentParser(
+        description="Fast IMAP inbox organizer. Dry-run is the default."
+    )
+    parser.add_argument("--rules", default="inbox_rules.example.json")
+    parser.add_argument(
+        "--limit",
+        type=int,
+        default=50,
+        help="Maximum recent messages to scan. Omit with --all.",
+    )
+    parser.add_argument(
+        "--all",
+        action="store_true",
+        help="Scan every message currently in INBOX.",
+    )
+    parser.add_argument(
+        "--batch-size",
+        type=int,
+        default=100,
+        help="Number of message headers to fetch per IMAP request.",
+    )
+    parser.add_argument(
+        "--since-days",
+        type=int,
+        help="Only scan messages received within the last N days.",
+    )
+    parser.add_argument(
+        "--apply",
+        action="store_true",
+        help="Actually apply rule actions.",
+    )
+    parser.add_argument(
+        "--analyze",
+        action="store_true",
+        help="List recent sender/subject headers without applying rules.",
+    )
+    parser.add_argument(
+        "--continue-on-error",
+        action="store_true",
+        help="Log individual IMAP errors and continue instead of stopping.",
+    )
+    parser.add_argument(
+        "--progress-every",
+        type=int,
+        default=250,
+        help="Print progress after this many messages.",
+    )
+    args = parser.parse_args()
+    if args.all:
+        args.limit = None
+    if args.progress_every < 1:
+        raise ValueError("--progress-every must be positive.")
+    return args
 
 
 def main() -> None:
     args = parse_args()
     if args.analyze:
-        analyze_inbox(args.limit)
+        analyze_inbox(args.limit, args.batch_size)
         return
+
     rules = load_rules(args.rules)
-    count = clean_inbox(rules, args.limit, dry_run=not args.apply)
+    count = clean_inbox(
+        rules,
+        args.limit,
+        dry_run=not args.apply,
+        batch_size=args.batch_size,
+        since_days=args.since_days,
+        progress_every=args.progress_every,
+        continue_on_error=args.continue_on_error,
+    )
     mode = "applied" if args.apply else "dry-run matched"
-    print(f"Done: {mode} {count} message(s).")
+    print(f"Done: {mode} {count:,} message(s).")
 
 
 if __name__ == "__main__":

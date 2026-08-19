@@ -1,19 +1,64 @@
 [
   {
-    "name": "Archive newsletters",
-    "action": "archive",
-    "subject_contains": ["newsletter", "weekly digest", "roundup"]
+    "name": "Newsletters",
+    "action": "move",
+    "destination": "Newsletters",
+    "subject_contains": [
+      "newsletter",
+      "weekly digest",
+      "daily digest",
+      "weekly roundup",
+      "monthly roundup",
+      "unsubscribe"
+    ]
   },
   {
-    "name": "Move receipts",
+    "name": "Receipts and invoices",
     "action": "move",
     "destination": "Receipts",
-    "from_contains": ["receipt", "billing", "invoice"],
-    "subject_contains": ["receipt", "invoice", "payment"]
+    "from_contains": [
+      "receipt",
+      "billing",
+      "invoice",
+      "orders",
+      "no-reply"
+    ],
+    "subject_contains": [
+      "receipt",
+      "invoice",
+      "order confirmation",
+      "payment confirmation",
+      "purchase"
+    ]
   },
   {
-    "name": "Delete obvious promotions",
-    "action": "delete",
-    "subject_contains": ["limited time", "flash sale", "exclusive offer"]
+    "name": "Shipping notifications",
+    "action": "move",
+    "destination": "Shipping",
+    "subject_contains": [
+      "your order shipped",
+      "shipped",
+      "out for delivery",
+      "delivered",
+      "tracking",
+      "delivery"
+    ]
+  },
+  {
+    "name": "Promotions",
+    "action": "move",
+    "destination": "Promotions",
+    "subject_contains": [
+      "sale",
+      "deal",
+      "discount",
+      "offer",
+      "promo",
+      "clearance",
+      "save",
+      "coupon",
+      "limited time",
+      "flash sale"
+    ]
   }
 ]

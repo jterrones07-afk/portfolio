@@ -8,12 +8,7 @@
       "coach.com",
       "gucci.com",
       "shein.com",
-      "carfax.com",
-      "alltrails.com",
-      "benihana.com",
-      "edmunds.com",
-      "espnmail.com",
-      "tiktok.com"
+      "alltrails.com"
     ],
     "exclude_from_contains": [
       "accounts.google.com",
@@ -29,6 +24,40 @@
       "send.applicantemails.com",
       "applyresponse.com",
       "studentaid.gov"
+    ]
+  },
+  {
+    "name": "Vehicle alerts",
+    "action": "move",
+    "destination": "Vehicle Alerts",
+    "from_contains": [
+      "carfax.com",
+      "edmunds.com"
+    ]
+  },
+  {
+    "name": "Sports and entertainment newsletters",
+    "action": "move",
+    "destination": "Newsletters",
+    "from_contains": [
+      "espnmail.com",
+      "updates.ubisoft.com"
+    ]
+  },
+  {
+    "name": "Social notifications",
+    "action": "move",
+    "destination": "Social",
+    "from_contains": [
+      "tiktok.com"
+    ]
+  },
+  {
+    "name": "Restaurant promotions",
+    "action": "move",
+    "destination": "Promotions",
+    "from_contains": [
+      "benihana.com"
     ]
   },
   {

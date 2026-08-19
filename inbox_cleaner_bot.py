@@ -78,37 +78,63 @@ def message_text(message: Message) -> str:
 
 
 def contains_any(haystack: str, needles: list[str] | None) -> bool:
+    """Return True when any configured substring occurs, case-insensitively."""
     if not needles:
         return True
-    normalized = haystack.lower()
-    return any(needle.lower() in normalized for needle in needles)
+    normalized = haystack.casefold()
+    return any(needle.casefold() in normalized for needle in needles)
+
+
+def decoded_subject(message: Message) -> str:
+    return str(make_header(decode_header(message.get("subject", ""))))
 
 
 def sender_text(message: Message) -> str:
     raw_sender = message.get("from", "")
     display_name, address = parseaddr(raw_sender)
-    return f"{raw_sender} {display_name} {address}".lower()
+    # Match against both the raw header and parsed address/name. Gmail commonly
+    # supplies quoted display names and encoded headers, so relying on one form
+    # can make otherwise valid domain rules fail.
+    return " ".join((raw_sender, display_name, address)).casefold()
 
 
 def rule_matches(rule: Rule, message: Message, body: str | None = None) -> bool:
     sender = sender_text(message)
-    subject = str(make_header(decode_header(message.get("subject", ""))))
-    if not contains_any(sender, rule.from_contains):
+    subject = decoded_subject(message).casefold()
+
+    if rule.from_contains and not contains_any(sender, rule.from_contains):
         return False
-    if not contains_any(subject, rule.subject_contains):
+    if rule.subject_contains and not contains_any(subject, rule.subject_contains):
         return False
-    if contains_any(sender, rule.exclude_from_contains):
+    if rule.exclude_from_contains and contains_any(sender, rule.exclude_from_contains):
         return False
-    if contains_any(subject, rule.exclude_subject_contains):
+    if rule.exclude_subject_contains and contains_any(subject, rule.exclude_subject_contains):
         return False
+
     needs_body = bool(rule.body_contains or rule.exclude_body_contains)
     if needs_body:
         body = body if body is not None else message_text(message)
-        if not contains_any(body, rule.body_contains):
+        if rule.body_contains and not contains_any(body, rule.body_contains):
             return False
-        if contains_any(body, rule.exclude_body_contains):
+        if rule.exclude_body_contains and contains_any(body, rule.exclude_body_contains):
             return False
     return True
+
+
+def explain_rule(rule: Rule, message: Message) -> str:
+    """Return a short reason for why a header does or does not match a rule."""
+    sender = sender_text(message)
+    subject = decoded_subject(message)
+    reasons: list[str] = []
+    if rule.from_contains:
+        reasons.append(f"from={'yes' if contains_any(sender, rule.from_contains) else 'no'}")
+    if rule.subject_contains:
+        reasons.append(f"subject={'yes' if contains_any(subject, rule.subject_contains) else 'no'}")
+    if rule.exclude_from_contains and contains_any(sender, rule.exclude_from_contains):
+        reasons.append("excluded-sender=yes")
+    if rule.exclude_subject_contains and contains_any(subject, rule.exclude_subject_contains):
+        reasons.append("excluded-subject=yes")
+    return ", ".join(reasons) or "no positive match fields"
 
 
 def connect() -> imaplib.IMAP4_SSL:
@@ -214,7 +240,7 @@ def clean_inbox(rules: list[Rule], limit: int, dry_run: bool) -> int:
         for message_id in message_ids:
             message, rule = evaluate_message(mailbox, message_id, rules)
             if rule and message:
-                subject = re.sub(r"\s+", " ", str(make_header(decode_header(message.get("subject", "(no subject)"))))).strip()
+                subject = re.sub(r"\s+", " ", decoded_subject(message) or "(no subject)").strip()
                 print(f"{message_id.decode()}: {rule.action.upper()} via '{rule.name}' — {subject}")
                 apply_action(mailbox, message_id, rule, dry_run)
                 processed += 1
@@ -240,7 +266,7 @@ def analyze_inbox(limit: int) -> None:
             if message is None:
                 continue
             sender = message.get("from", "(unknown sender)")
-            subject = str(make_header(decode_header(message.get("subject", "(no subject)"))))
+            subject = decoded_subject(message) or "(no subject)"
             print(f"{message_id.decode()} | {sender} | {subject}")
 
 
